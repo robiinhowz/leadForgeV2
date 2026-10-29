@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import {
   Flame, Search, Target, BarChart3, Rocket, ShieldAlert,
-  BookOpen, ArrowRight, Info,
+  BookOpen, ArrowRight,
 } from 'lucide-react';
 import DemoBadge from '@/components/DemoBadge';
 

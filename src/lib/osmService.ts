@@ -25,12 +25,14 @@ export interface SearchCompaniesParams {
   city: string;
   category: Category | '';
   limit: number;
+  offset?: number;
 }
 
-export interface SearchCompaniesResult {
+  export interface SearchCompaniesResult {
   leads: Lead[];
   queryDate: string;
   areaName: string;
+  nextOffset: number | null;
 }
 
 export type SearchError =
@@ -126,14 +128,43 @@ function incrementDailyUsage(): number {
 // --- Mapeamento de categorias LeadForge -> categorias Geoapify ---
 
 const CATEGORY_GEOAPIFY: Record<Category, string[]> = {
-  'Alimentação': ['catering.restaurant', 'catering.cafe', 'catering.fast_food', 'catering.bar', 'catering.pub', 'catering.bakery'],
-  'Moda e acessórios': ['commercial.clothes', 'commercial.shoes', 'commercial.jewelry', 'commercial.bag'],
-  'Casa e decoração': ['commercial.furniture', 'commercial.hardware', 'commercial.garden_centre'],
-  'Serviços profissionais': ['office.lawyer', 'office.accountant', 'office.architect', 'office.company', 'office.insurance'],
-  'Comércio e lojas virtuais': ['commercial.electronics', 'commercial.computer', 'commercial.mobile_phone', 'commercial.books', 'commercial.shop'],
-  'Criadores de conteúdo': ['commercial.photo', 'commercial.video', 'commercial.music'],
-  'Tecnologia': ['office.it', 'office.telecommunication', 'commercial.computer', 'commercial.electronics'],
-  'Outros negócios': ['commercial.supermarket', 'commercial.convenience', 'commercial.kiosk', 'commercial.variety_store', 'commercial.pet'],
+  'Alimentação': [
+    'catering.restaurant',
+    'catering.cafe',
+    'catering.fast_food',
+    'catering.bar',
+    'catering.pub',
+    'commercial.food_and_drink.bakery',
+  ],
+  'Moda e acessórios': [
+    'commercial.clothing',
+    'commercial.clothing.accessories',
+    'commercial.clothing.shoes',
+    'commercial.jewelry',
+    'commercial.bag',
+  ],
+  'Casa e decoração': [
+    'commercial.furniture_and_interior',
+    'commercial.houseware_and_hardware',
+    'commercial.garden',
+  ],
+  'Serviços profissionais': [
+    'office',
+  ],
+  'Comércio e lojas virtuais': [
+    'commercial',
+  ],
+  'Criadores de conteúdo': [
+    'commercial.hobby.photo',
+    'commercial.video_and_music',
+  ],
+  'Tecnologia': [
+    'commercial.elektronics',
+    'office.it',
+  ],
+  'Outros negócios': [
+    'commercial',
+  ],
 };
 
 // --- Cache em memória ---
@@ -145,9 +176,9 @@ interface CacheEntry {
 const cache = new Map<string, CacheEntry>();
 const CACHE_TTL_MS = 5 * 60 * 1000;
 
-function cacheKey(params: SearchCompaniesParams): string {
-  return `${params.country}|${params.state}|${params.city}|${params.category}|${params.limit}`;
-}
+  function cacheKey(params: SearchCompaniesParams): string {
+  return `${params.country}|${params.state}|${params.city}|${params.category}|${params.limit}|${params.offset ?? 0}`;
+  }
 
 /** Verifica se há resultado em cache válido para os parâmetros. */
 export function getCachedResult(params: SearchCompaniesParams): SearchCompaniesResult | null {
@@ -228,7 +259,50 @@ function buildSourceUrl(osmId: string | undefined): string | undefined {
   return `https://www.openstreetmap.org/${osmId}`;
 }
 
-/** Transforma um feature do Geoapify Places em um Lead. */
+//** Transforma um feature do Geoapify Places em um Lead. */
+
+    function getStateUF(stateName?: string): Lead['state'] {
+  if (!stateName) return undefined;
+
+  const normalized = stateName
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase();
+
+  const states: Record<string, Lead['state']> = {
+    acre: 'AC',
+    alagoas: 'AL',
+    amapa: 'AP',
+    amazonas: 'AM',
+    bahia: 'BA',
+    ceara: 'CE',
+    'distrito federal': 'DF',
+    'espirito santo': 'ES',
+    goias: 'GO',
+    maranhao: 'MA',
+    'mato grosso': 'MT',
+    'mato grosso do sul': 'MS',
+    'minas gerais': 'MG',
+    para: 'PA',
+    paraiba: 'PB',
+    parana: 'PR',
+    pernambuco: 'PE',
+    piaui: 'PI',
+    'rio de janeiro': 'RJ',
+    'rio grande do norte': 'RN',
+    'rio grande do sul': 'RS',
+    rondonia: 'RO',
+    roraima: 'RR',
+    'santa catarina': 'SC',
+    'sao paulo': 'SP',
+    sergipe: 'SE',
+    tocantins: 'TO',
+  };
+
+  return states[normalized];
+}
+
 export function transformGeoapifyPlace(
   feature: {
     properties: {
@@ -242,7 +316,10 @@ export function transformGeoapifyPlace(
       formatted?: string;
       address_line1?: string;
       address_line2?: string;
-      datasource?: { raw_object?: Record<string, string>; osm_id?: string };
+      datasource?: {
+        raw_object?: Record<string, string>;
+        osm_id?: string;
+      };
       website?: string;
       url?: string;
       phone?: string;
@@ -255,21 +332,38 @@ export function transformGeoapifyPlace(
 ): Lead | null {
   const props = feature.properties;
   const name = props.name;
-  if (!name) return null;
+
+  // Sem nome, não criamos um lead.
+  if (!name) {
+    console.log(
+  'Registro Geoapify completo:',
+  JSON.stringify(feature.properties, null, 2)
+);
+    return null;
+  }
 
   const lat = props.lat ?? feature.geometry?.coordinates?.[1];
   const lon = props.lon ?? feature.geometry?.coordinates?.[0];
-  const coordinates = lat != null && lon != null ? { lat, lng: lon } : undefined;
+
+  const coordinates =
+    lat != null && lon != null
+      ? { lat, lng: lon }
+      : undefined;
 
   const categories = props.categories ?? [];
   const raw = props.datasource?.raw_object ?? {};
-  const allProps: Record<string, unknown> = { ...raw, ...props };
+
+  const allProps: Record<string, unknown> = {
+    ...raw,
+    ...props,
+  };
 
   const website = getWebsite(allProps);
   const whatsapp = getWhatsapp(allProps);
   const digitalPresence = inferDigitalPresenceFromProps(allProps);
 
   let presenceType: Lead['presenceType'] = 'fisico';
+
   if (!coordinates) {
     presenceType = 'online';
   } else if (website) {
@@ -279,10 +373,17 @@ export function transformGeoapifyPlace(
   const city = props.city || areaName;
   const addrLine1 = props.address_line1 ?? '';
   const addrLine2 = props.address_line2 ?? '';
-  const summary = [addrLine1, addrLine2].filter(Boolean).join(', ') || categories.join(', ') || 'Empresa';
+
+  const summary =
+    [addrLine1, addrLine2].filter(Boolean).join(', ') ||
+    categories.join(', ') ||
+    'Empresa';
 
   const sourceId = props.datasource?.osm_id;
-  const leadId = sourceId ? `osm-${sourceId.replace('/', '-')}` : `geo-${buildSlug(name, areaName)}`;
+
+  const leadId = sourceId
+    ? `osm-${sourceId.replace('/', '-')}`
+    : `geo-${buildSlug(name, areaName)}`;
 
   return {
     id: leadId,
@@ -293,7 +394,7 @@ export function transformGeoapifyPlace(
     description: addrLine1 || summary,
     longDescription: undefined,
     city,
-    state: undefined,
+    state: getStateUF(props.state),
     presenceType,
     coordinates,
     website,
@@ -317,7 +418,7 @@ export function transformGeoapifyPlace(
       },
     ],
     saved: false,
-    sourceId: sourceId,
+    sourceId,
     sourceUrl: buildSourceUrl(sourceId),
   };
 }
@@ -364,7 +465,7 @@ interface GeoapifyGeocodeResult {
 const geocodeCache = new Map<string, { lat: number; lon: number; areaName: string; timestamp: number }>();
 const GEOCODE_TTL_MS = 30 * 60 * 1000; // 30 min
 
-async function geocodeCity(
+  async function geocodeCity(
   apiKey: string,
   country: string,
   state: string,
@@ -402,6 +503,7 @@ async function geocodeCity(
 
   const r = data.results[0];
   const result = { areaName: r.city || city, lat: r.lat, lon: r.lon };
+  console.log('Geoapify geocodificação:', result);
   geocodeCache.set(geocodeKey, { ...result, timestamp: Date.now() });
   return result;
 }
@@ -412,18 +514,28 @@ function buildPlacesUrl(
   lon: number,
   category: Category | '',
   limit: number,
+  offset = 0,
 ): string {
   let categoriesParam: string;
+
   if (category) {
     categoriesParam = CATEGORY_GEOAPIFY[category].join(',');
   } else {
     categoriesParam = Object.values(CATEGORY_GEOAPIFY).flat().join(',');
   }
 
-  const radius = 5000;
+  const radius = 15000;
   const conditions = `circle:${lon},${lat},${radius}`;
 
-  return `${GEOAPIFY_PLACES_URL}?categories=${encodeURIComponent(categoriesParam)}&filter=${encodeURIComponent(conditions)}&limit=${limit}&apiKey=${apiKey}`;
+  const params = new URLSearchParams({
+    categories: categoriesParam,
+    filter: conditions,
+    limit: String(limit),
+    offset: String(offset),
+    apiKey,
+  });
+
+  return `${GEOAPIFY_PLACES_URL}?${params.toString()}`;
 }
 
 interface GeoapifyPlacesResult {
@@ -511,7 +623,14 @@ export async function searchCompanies(
     const area = await geocodeCity(apiKey, params.country, params.state, params.city, ourSignal);
 
     // Etapa 2: Buscar POIs
-    const placesUrl = buildPlacesUrl(apiKey, area.lat, area.lon, params.category, params.limit);
+    const placesUrl = buildPlacesUrl(
+    apiKey,
+    area.lat,
+    area.lon,
+    params.category,
+    params.limit,
+    params.offset ?? 0,
+);
     const queryDate = new Date().toISOString();
 
     const resp = await fetch(placesUrl, { signal: ourSignal });
@@ -541,36 +660,66 @@ export async function searchCompanies(
         },
       };
     }
-    if (!resp.ok) {
-      return {
-        error: {
-          type: 'server_error',
-          message: `Geoapify Places: HTTP ${resp.status}.`,
-          status: resp.status,
-        },
-      };
-    }
+   if (!resp.ok) {
+    const details = await resp.text();
+
+    return {
+    error: {
+      type: 'server_error',
+      message: `Geoapify Places: HTTP ${resp.status} — ${details}`,
+      status: resp.status,
+    },
+  };
+}
 
     const data = (await resp.json()) as GeoapifyPlacesResult;
     const features = data.features ?? [];
+    console.log('Total bruto da Geoapify:', features.length);
+  console.log('Limite solicitado:', params.limit);
+  console.log('Categoria selecionada:', params.category || 'Todos os nichos');
 
-    const leads: Lead[] = features
-      .map((f) => transformGeoapifyPlace(f, area.areaName, queryDate))
-      .filter((l): l is Lead => l !== null);
+    const leadsTransformados = features.map((f) =>
+    transformGeoapifyPlace(f, area.areaName, queryDate)
+  );
+
+  console.log(
+  'Resultados descartados na transformação:',
+  leadsTransformados.filter((l) => l === null).length
+  );
+
+  const leads: Lead[] = leadsTransformados.filter(
+  (l): l is Lead => l !== null
+  );
+
+console.log('Leads válidos após transformação:', leads.length);
 
     const deduped = deduplicateLeads(leads);
+    console.log('Leads após deduplicação:', deduped.length);
 
     const result: SearchCompaniesResult = {
-      leads: deduped,
-      queryDate,
-      areaName: area.areaName,
-    };
+    leads: deduped,
+    queryDate,
+    areaName: area.areaName,
+    nextOffset:
+    features.length === params.limit
+      ? (params.offset ?? 0) + features.length
+      : null,
+};
 
     cache.set(key, { data: result, timestamp: Date.now() });
 
     return { results: result };
-  } catch (err: any) {
-    if (err?.name === 'AbortError') {
+  } catch (err: unknown) {
+    const error = (
+      typeof err === 'object' && err !== null ? err : {}
+    ) as {
+      name?: string;
+      type?: string;
+      message?: string;
+      status?: number;
+    };
+
+    if (error.name === 'AbortError') {
       return {
         error: {
           type: 'network',
@@ -578,22 +727,48 @@ export async function searchCompanies(
         },
       };
     }
-    if (err?.type === 'rate_limit') {
-      return { error: { type: 'rate_limit', message: err.message } };
+
+    if (error.type === 'rate_limit') {
+      return {
+        error: {
+          type: 'rate_limit',
+          message: error.message ?? 'Limite de requisições atingido.',
+        },
+      };
     }
-    if (err?.type === 'config_invalid') {
-      return { error: { type: 'config_invalid', message: err.message } };
+
+    if (error.type === 'config_invalid') {
+      return {
+        error: {
+          type: 'config_invalid',
+          message: error.message ?? 'Chave de API inválida.',
+        },
+      };
     }
-    if (err?.type === 'not_found') {
-      return { error: { type: 'not_found', message: err.message } };
+
+    if (error.type === 'not_found') {
+      return {
+        error: {
+          type: 'not_found',
+          message: error.message ?? 'Município não encontrado.',
+        },
+      };
     }
-    if (err?.type === 'server_error') {
-      return { error: { type: 'server_error', message: err.message, status: err.status } };
+
+    if (error.type === 'server_error') {
+      return {
+        error: {
+          type: 'server_error',
+          message: error.message ?? 'Erro do servidor.',
+          status: error.status ?? 500,
+        },
+      };
     }
+
     return {
       error: {
         type: 'network',
-        message: `Erro de conexão: ${err?.message ?? 'desconhecido'}`,
+        message: `Erro de conexão: ${error.message ?? 'desconhecido'}`,
       },
     };
   } finally {

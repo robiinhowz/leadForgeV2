@@ -517,7 +517,7 @@ describe('searchCompanies — erros HTTP', () => {
 
     const res = await searchCompanies(defaultParams());
     expect(res.error!.type).toBe('server_error');
-    expect((res.error as any).status).toBe(500);
+    expect(res.error).toMatchObject({ type: 'server_error', status: 500 });
   });
 
   it('retorna network quando fetch lança erro de conexão', async () => {

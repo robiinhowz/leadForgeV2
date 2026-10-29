@@ -58,28 +58,33 @@ export default function MapPage() {
           <Filter className="h-4 w-4" />
           Filtros
         </button>
-        <select
-          value={category}
-          onChange={(e) => setCategory(e.target.value as Category | '')}
-          className="rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm"
-          aria-label="Filtrar por categoria"
-        >
-          <option value="">Todas as categorias</option>
-          {CATEGORIES.map((c) => (
-            <option key={c.name} value={c.name}>{c.name}</option>
-          ))}
-        </select>
-        <select
-          value={state}
-          onChange={(e) => setState(e.target.value as StateUF | '')}
-          className="rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm"
-          aria-label="Filtrar por estado"
-        >
-          <option value="">Todos os estados</option>
-          {allStates.map((s) => (
-            <option key={s} value={s}>{s}</option>
-          ))}
-        </select>
+      
+         <div className={`${showFilters ? 'flex' : 'hidden'} w-full flex-wrap gap-3 lg:flex`}>
+          <select
+            value={category}
+            onChange={(e) => setCategory(e.target.value as Category | '')}
+            className="rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm"
+            aria-label="Filtrar por categoria"
+          >
+            <option value="">Todas as categorias</option>
+            {CATEGORIES.map((c) => (
+              <option key={c.name} value={c.name}>{c.name}</option>
+            ))}
+          </select>
+
+          <select
+            value={state}
+            onChange={(e) => setState(e.target.value as StateUF | '')}
+            className="rounded-lg border border-stone-200 bg-white px-3 py-2 text-sm"
+            aria-label="Filtrar por estado"
+          >
+            <option value="">Todos os estados</option>
+            {allStates.map((s) => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
+        </div>
+
         {(category || state) && (
           <button
             onClick={() => { setCategory(''); setState(''); }}

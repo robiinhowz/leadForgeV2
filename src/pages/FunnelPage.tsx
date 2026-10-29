@@ -1,10 +1,10 @@
 import { useLeads } from '@/lib/leadsContext';
 import { FUNNEL_STAGES, STAGE_LABELS } from '@/types';
-import type { FunnelStage, Lead } from '@/types';
+import type { FunnelStage } from '@/types';
 import { Link } from 'react-router-dom';
 import { getCategoryIcon } from '@/lib/utils';
 import { Info, ChevronRight, ChevronLeft } from 'lucide-react';
-import { useState } from 'react';
+
 
 const stageColors: Record<FunnelStage, string> = {
   novo: 'border-stone-300 bg-stone-50',
@@ -18,7 +18,6 @@ const stageColors: Record<FunnelStage, string> = {
 
 export default function FunnelPage() {
   const { leads, setStage } = useLeads();
-  const [movingId, setMovingId] = useState<string | null>(null);
 
   function moveLead(id: string, currentStage: FunnelStage, direction: 'next' | 'prev') {
     const idx = FUNNEL_STAGES.findIndex((s) => s.value === currentStage);

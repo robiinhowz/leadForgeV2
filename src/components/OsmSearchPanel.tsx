@@ -8,8 +8,6 @@ import {
   isConfigured,
   getDailySearchStatus,
   isLeadDuplicate,
-  clearCache,
-  resetDailyUsage,
   type SearchCompaniesParams,
   type SearchError,
 } from '@/lib/osmService';
@@ -45,6 +43,7 @@ export default function OsmSearchPanel() {
   const [limit, setLimit] = useState(20);
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState<Lead[] | null>(null);
+  const [nextOffset, setNextOffset] = useState<number | null>(null);
   const [error, setError] = useState<SearchError | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [importedCount, setImportedCount] = useState<number | null>(null);
@@ -53,6 +52,7 @@ export default function OsmSearchPanel() {
   const [remaining, setRemaining] = useState<number>(getDailySearchStatus().remaining);
 
   const abortRef = useRef<AbortController | null>(null);
+  const newResultsRef = useRef<HTMLDivElement | null>(null);
   const configured = isConfigured();
 
   const handleSearch = useCallback(async () => {
@@ -93,6 +93,7 @@ export default function OsmSearchPanel() {
     }
 
     setResults(res.results.leads);
+    setNextOffset(res.results.nextOffset);
     setQueryDate(res.results.queryDate);
     setAreaName(res.results.areaName);
     const initialSelected = new Set<string>(
@@ -103,6 +104,75 @@ export default function OsmSearchPanel() {
     setSelected(initialSelected);
     setLoading(false);
   }, [loading, city, country, state, category, limit, leads]);
+
+      const handleLoadMore = useCallback(async () => {
+  if (loading || nextOffset === null || !city.trim()) return;
+
+  setLoading(true);
+  setError(null);
+
+  const controller = new AbortController();
+  abortRef.current = controller;
+
+  const params: SearchCompaniesParams = {
+    country,
+    state: BRAZIL_STATES.find((s) => s.value === state)?.label ?? state,
+    city: city.trim(),
+    category,
+    limit,
+    offset: nextOffset,
+  };
+
+  const res = await searchCompanies(params, controller.signal);
+
+  setRemaining(getDailySearchStatus().remaining);
+
+  if (res.error) {
+    setError(res.error);
+    setLoading(false);
+    return;
+  }
+
+  const existing = results ?? [];
+  const newLeads = res.results.leads.filter(
+    (lead) =>
+      !existing.some((item) => item.id === lead.id) &&
+      !isLeadDuplicate(lead, leads),
+  );
+
+    if (newLeads.length > 0) {
+  const firstNewLeadId = newLeads[0].id;
+
+  requestAnimationFrame(() => {
+    const list = newResultsRef.current;
+    const firstNewLead = list?.querySelector(
+      `[data-lead-id="${firstNewLeadId}"]`,
+    );
+
+    firstNewLead?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'start',
+    });
+  });
+}
+
+  setResults([...existing, ...newLeads]);
+  setNextOffset(res.results.nextOffset);
+  setQueryDate(res.results.queryDate);
+  setAreaName(res.results.areaName);
+  setSelected(new Set());
+  setLoading(false);
+}, [
+  loading,
+  nextOffset,
+  city,
+  country,
+  state,
+  category,
+  limit,
+  leads,
+  results,
+]);
 
   const handleCancel = useCallback(() => {
     abortRef.current?.abort();
@@ -272,6 +342,16 @@ export default function OsmSearchPanel() {
             </span>
           </div>
 
+              {remaining <= 0 && (
+  <div className="mb-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+    <p className="font-semibold">Limite diário atingido</p>
+    <p className="mt-0.5">
+      Você atingiu o limite de pesquisas disponível no seu plano.
+      Tente novamente quando seu limite for renovado.
+    </p>
+  </div>
+)}
+
           {/* Erro compacto */}
           {error && (
             <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
@@ -339,7 +419,9 @@ export default function OsmSearchPanel() {
                   </div>
 
                   {/* Lista de resultados — scrollável */}
-                  <div className="space-y-1.5 max-h-[350px] overflow-y-auto rounded-lg border border-stone-100 p-1.5">
+                  <div
+                      ref={newResultsRef}
+                                className="space-y-1.5 max-h-[350px] overflow-y-auto rounded-lg border border-stone-100 p-1.5">
                     {results.map((lead) => {
                       const Icon = getCategoryIcon(lead.category);
                       const isAlreadyLead = isLeadDuplicate(lead, leads);
@@ -347,6 +429,7 @@ export default function OsmSearchPanel() {
                       return (
                         <div
                           key={lead.id}
+                           data-lead-id={lead.id}
                           className={`flex items-start gap-2.5 rounded-lg border p-2.5 transition-all ${
                             isSelected ? 'border-stone-400 bg-stone-50' : 'border-stone-100 bg-white'
                           }`}
@@ -399,6 +482,17 @@ export default function OsmSearchPanel() {
                       );
                     })}
                   </div>
+
+                  {nextOffset !== null && (
+                    <button
+                      type="button"
+                      onClick={handleLoadMore}
+                      disabled={loading}
+                      className="mt-3 w-full rounded-lg border border-stone-200 px-3 py-2 text-xs font-medium text-stone-600 hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {loading ? 'Carregando...' : 'Carregar mais empresas'}
+                    </button>
+                  )}
                 </>
               )}
             </div>

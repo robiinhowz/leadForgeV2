@@ -84,12 +84,9 @@ export default function LeadDetailPage() {
 
       {/* HEADER */}
       <div className="rounded-2xl border border-stone-200 bg-white shadow-sm overflow-hidden">
-        <div className="relative h-32 bg-gradient-to-r from-primary-700 to-primary-500 sm:h-40">
-          <div className="absolute inset-0 opacity-10" aria-hidden>
-            <div className="absolute right-10 top-4 h-24 w-24 rounded-full bg-gold-400 blur-2xl" />
+        <div  className="h-3 bg-gradient-to-r from-primary-700 to-primary-500">
           </div>
-        </div>
-        <div className="px-6 pb-6 -mt-12 sm:-mt-14">
+        <div className="px-6 py-5">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
             <div className="flex h-24 w-24 items-center justify-center rounded-2xl border-4 border-white bg-stone-50 shadow-sm sm:h-28 sm:w-28">
               <Icon className="h-10 w-10 text-primary-400" strokeWidth={1.5} />
